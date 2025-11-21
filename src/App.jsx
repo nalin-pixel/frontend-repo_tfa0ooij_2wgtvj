@@ -1,19 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LogIn, UserPlus, FileText, Users, HandCoins, Wallet, Box, BarChart3, CheckCircle2, Loader2 } from 'lucide-react'
+import { LogIn, UserPlus, FileText, Users, HandCoins, Wallet, CheckCircle2, Loader2 } from 'lucide-react'
 
-const API = import.meta.env.VITE_BACKEND_URL || '/api'
+// Prefer environment variable, but fall back to the live backend URL if not provided
+const FALLBACK_BACKEND = 'https://ta-01kajt2x2pdr9x3ftvwfvdjwzk-8000.wo-5ayxdhu6vtdkhhouo024ukwly.w.modal.host'
+const API = import.meta.env.VITE_BACKEND_URL || FALLBACK_BACKEND
 
 function useAuth() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
   const [role, setRole] = useState(localStorage.getItem('role') || '')
   const login = async (email, password) => {
     const r = await fetch(`${API}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) })
-    if (!r.ok) throw new Error('Login gagal')
+    if (!r.ok) {
+      const msg = await r.text().catch(()=> 'Login gagal')
+      throw new Error(msg || 'Login gagal')
+    }
     const data = await r.json()
     setToken(data.access_token)
-    // decode role from token is optional; we will keep role locally if needed
     localStorage.setItem('token', data.access_token)
-    // naive decode
+    localStorage.setItem('email', email)
+    // naive decode to get role
     try {
       const [, payload] = data.access_token.split('.')
       const obj = JSON.parse(atob(payload))
@@ -25,17 +30,21 @@ function useAuth() {
   }
   const register = async (name, email, password) => {
     const r = await fetch(`${API}/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password }) })
-    if (!r.ok) throw new Error('Registrasi gagal')
+    if (!r.ok) {
+      const msg = await r.text().catch(()=> 'Registrasi gagal')
+      throw new Error(msg || 'Registrasi gagal')
+    }
     const data = await r.json()
     setToken(data.access_token)
     localStorage.setItem('token', data.access_token)
+    localStorage.setItem('email', email)
   }
-  const logout = () => { setToken(''); setRole(''); localStorage.removeItem('token'); localStorage.removeItem('role') }
+  const logout = () => { setToken(''); setRole(''); localStorage.removeItem('token'); localStorage.removeItem('role'); localStorage.removeItem('email') }
   const headers = useMemo(() => token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }, [token])
   return { token, role, headers, login, register, logout }
 }
 
-function Card({ title, icon, children }) {
+function Card({ title, icon, children, footer }) {
   return (
     <div className="bg-white rounded-xl shadow border border-emerald-100 p-5">
       <div className="flex items-center gap-2 text-emerald-700 font-semibold mb-3">
@@ -43,6 +52,7 @@ function Card({ title, icon, children }) {
         <span>{title}</span>
       </div>
       {children}
+      {footer}
     </div>
   )
 }
@@ -63,7 +73,8 @@ function AuthPanel({ auth }) {
     } catch (err) { setError(err.message) } finally { setLoading(false) }
   }
   return (
-    <Card title={mode === 'login' ? 'Masuk' : 'Daftar'} icon={mode === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}>
+    <Card title={mode === 'login' ? 'Masuk' : 'Daftar'} icon={mode === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+      footer={<p className="mt-3 text-xs text-gray-500">API: <span className="font-mono">{API}</span></p>}>
       <form onSubmit={submit} className="space-y-3">
         {mode === 'register' && (
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="Nama" className="w-full border rounded px-3 py-2" required />
@@ -148,7 +159,8 @@ function SuratForm({ auth }) {
   const [jenis, setJenis] = useState('sku')
   const submit = async (e) => {
     e.preventDefault()
-    await fetch(`${API}/surat`, { method: 'POST', headers: auth.headers, body: JSON.stringify({ pemohon_user_id: localStorage.getItem('email') || 'me', jenis, data: {} }) })
+    const me = localStorage.getItem('email') || 'me'
+    await fetch(`${API}/surat`, { method: 'POST', headers: auth.headers, body: JSON.stringify({ pemohon_user_id: me, jenis, data: {} }) })
     alert('Pengajuan surat dikirim')
   }
   return (
